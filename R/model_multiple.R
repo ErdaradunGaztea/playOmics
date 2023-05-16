@@ -19,8 +19,8 @@ model_multiple <- function(
 
   data <- data %>%
     purrr::reduce(full_join, by = c(target$target_variable, target$id_variable)) %>%
-    select(-target$id_variable) %>%
-    relocate(target$target_variable, .after = last_col())
+    dplyr::select(-target$id_variable) %>%
+    dplyr::relocate(target$target_variable, .after = dplyr::last_col())
 
   chunks <- c(
     combn(ncol(data) - 1, 2, simplify = FALSE),
@@ -51,7 +51,7 @@ model_multiple <- function(
     set.seed(sample(seq_len(100000), size = 1))
 
     model_data <- na.omit(select(data, column_indices))
-    model_name <- paste(colnames(select(model_data, -last_col())), collapse = " + ")
+    model_name <- paste(colnames(dplyr::select(model_data, -dplyr::last_col())), collapse = " + ")
     # Model names are unique within an analysis
     model_id <- digest::digest(model_name)
     model_dir <- file.path(models_dir, model_id)
@@ -63,7 +63,7 @@ model_multiple <- function(
       n_groups <- model_data %>%
         count(!!rlang::sym(target$target_variable)) %>%
         tidyr::pivot_wider(
-          names_from = all_of(target$target_variable), names_prefix = "n_", values_from = n
+          names_from = dplyr::all_of(target$target_variable), names_prefix = "n_", values_from = n
         ) %>%
         lapply(identity)
 
@@ -117,7 +117,7 @@ model_multiple <- function(
 
       results <- model_res %>%
         tune::collect_metrics(summarize = TRUE) %>%
-        select(.metric, mean) %>%
+        dplyr::select(.metric, mean) %>%
         tidyr::pivot_wider(names_from = .metric, values_from = mean)
 
       # Log metrics

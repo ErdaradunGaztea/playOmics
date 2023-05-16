@@ -3,6 +3,7 @@
 export("%>%")
 export(define_target)
 export(filter_below_threshold)
+export(model_multiple)
 export(nested_filtering)
 export(prepare_data_for_modelling)
 importFrom(dplyr,"%>%")
