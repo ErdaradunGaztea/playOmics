@@ -13,8 +13,6 @@ RoxygenNote: 7.2.3
 VignetteBuilder: knitr
 Imports: 
     carrier,
-    DALEX,
-    DALEXtra,
     data.table,
     digest,
     dplyr,
@@ -33,6 +31,8 @@ Imports:
     workflows,
     yardstick
 Suggests: 
+    DALEX,
+    DALEXtra,
     knitr,
     pbapply,
     rmarkdown
