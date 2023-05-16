@@ -68,15 +68,17 @@ nested_filtering <- function(
 ) {
   sapply(names(data), function(dataframe) {
     logger::log_info("Ranking {dataframe} data")
-    resample <-
-      rsample::vfold_cv(data[[dataframe]],
-                        v = nfold,
-                        strata = target$target_variable
-      )
-    training_data <-
-      lapply(1:nfold, function(i) resample$splits[[i]]$data[resample$splits[[i]]$in_id, ])
 
-    names(training_data) <- paste0("split", 1:nfold)
+    resample <- rsample::vfold_cv(
+      data[[dataframe]],
+      v = nfold,
+      strata = target$target_variable
+    )
+    training_data <- lapply(seq_len(nfold), function(i) {
+      rsample::training(rsample::get_rsplit(i))
+    })
+
+    names(training_data) <- paste0("split", seq_len(nfold))
 
     ranked_features <- rank_features(
       training_data, target, filter_name = filter_name, n_threads = n_threads
