@@ -11,7 +11,8 @@ model_multiple(
   n_cores = parallel::detectCores()/4,
   n_prop = 2/3,
   n_repeats = 50,
-  directory = getwd()
+  directory = getwd(),
+  explain = TRUE
 )
 }
 \description{
