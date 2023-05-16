@@ -3,7 +3,7 @@
 #' @export
 model_multiple <- function(
     data, target, experiment_name, n_cores = parallel::detectCores() / 4,
-    n_prop = 2/3, n_repeats = 50, directory = getwd()
+    n_prop = 2/3, n_repeats = 50, directory = getwd(), explain = TRUE
 ){
   is_Windows <- Sys.info()[["sysname"]] == "Windows"
 
@@ -143,25 +143,26 @@ model_multiple <- function(
         file.path(model_dir, "model.Rds")
       )
 
-      # TODO: make explainers optional
-      # explain prediction
-      explainer_lr <- DALEXtra::explain_tidymodels(
-        fitted_model,
-        data = model_data,
-        y = model_data[[target$target_variable]] == target$positive_class_indication,
-        label = "lr",
-        verbose = FALSE
-      )
+      if (explain) {
+        # Explain prediction only if asked to do so
+        explainer_lr <- DALEXtra::explain_tidymodels(
+          fitted_model,
+          data = model_data,
+          y = model_data[[target$target_variable]] == target$positive_class_indication,
+          label = "lr",
+          verbose = FALSE
+        )
 
-      saveRDS(
-        carrier::crate(
-          function(data_to_fit) {
-            DALEX::predict_parts(explainer_lr, data_to_fit, type = "shap")
-          },
-          explainer_lr = explainer_lr
-        ),
-        file.path(model_dir, "explainer.Rds")
-      )
+        saveRDS(
+          carrier::crate(
+            function(data_to_fit) {
+              DALEX::predict_parts(explainer_lr, data_to_fit, type = "shap")
+            },
+            explainer_lr = explainer_lr
+          ),
+          file.path(model_dir, "explainer.Rds")
+        )
+      }
 
       # save raw data
       saveRDS(
