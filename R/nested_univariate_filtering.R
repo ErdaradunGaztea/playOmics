@@ -1,42 +1,37 @@
 rank_features <- function(data, target, filter_name, n_threads = 1) {
+  ranked_features <- sapply(names(data), function(dataframe) {
+    mydata <- data[[dataframe]] %>% dplyr::select(-target$id_variable)
 
-  ranked_features <-
-    sapply(names(data), function(dataframe) {
-      mydata <- data[[dataframe]] %>% select(-target$id_variable)
+    task <- mlr3::as_task_classif(mydata, target = target$target_variable, positive = target$positive_class)
+    filter <- mlr3filters::flt(filter_name)
 
-      task <- mlr3::as_task_classif(mydata, target = target$target_variable, positive = target$positive_class)
-      filter <- mlr3filters::flt(filter_name)
+    # set threads for all filters which support it
+    mlr3::set_threads(filter, n_threads)
 
-      # set threads for all filters which support it
-      mlr3::set_threads(filter, n_threads)
+    # TODO: why data.table of all things?!
+    ranked_features <- data.table::as.data.table(filter$calculate(task))
+  }, USE.NAMES = TRUE, simplify = F)
 
-      ranked_features <- data.table::as.data.table(filter$calculate(task))
-    }, USE.NAMES = TRUE, simplify = F)
-
-  ranked_features <-
-    lapply(1:length(ranked_features), function(i) {
-      iteration_name <- names(ranked_features[i])
-      ranked_features[[i]] %>% add_column(id = iteration_name)
-    }) %>%
-    bind_rows()
+  ranked_features <- lapply(1:length(ranked_features), function(i) {
+    iteration_name <- names(ranked_features[i])
+    ranked_features[[i]] %>% tibble::add_column(id = iteration_name)
+  }) %>%
+    dplyr::bind_rows()
 
   # different selection methods? weighted ranks etc?
-  ranking <-
-    ranked_features %>%
-    group_by(!!.[[1]]) %>%
-    summarise(
+  ranking <- ranked_features %>%
+    dplyr::group_by(!!.[[1]]) %>%
+    dplyr::summarise(
       mean_score = mean(score, na.rm = T),
       variance = var(score, na.rm = T)
     ) %>%
-    arrange(desc(mean_score))
+    dplyr::arrange(dplyr::desc(mean_score))
 
-  return(list(ranked_features = spread(ranked_features, id, score), ranking = ranking))
+  list(ranked_features = tidyr::spread(ranked_features, id, score), ranking = ranking)
 }
 
-
+# TODO: how does it even work?
 select_features <- function(data, ranking, target, cutoff_method, cutoff_treshold) {
-
-  # select
   selected_features <-
     if (cutoff_method == "top_n") {
       na.omit(ranking[1:cutoff_treshold, 1])
@@ -46,7 +41,8 @@ select_features <- function(data, ranking, target, cutoff_method, cutoff_treshol
       na.omit(ranked_features[ranked_features$score > cutoff_treshold, 1])
     }
 
-  filtered_data <- data[, c(target$id_variable, target$target_variable, pull(selected_features))]
+  # TODO: seems like this dplyr::pull() retrieves a character vector, am I right?
+  data[, c(target$id_variable, target$target_variable, dplyr::pull(selected_features))]
 }
 
 #' Univariate feature selection
@@ -66,8 +62,10 @@ select_features <- function(data, ranking, target, cutoff_method, cutoff_treshol
 #' @examples
 #' filtered_data <- nested_filtering(data = data_prepared, target = target, filter_name = "auc", cutoff_method = "top_n", cutoff_treshold = 10, n_threads = 10)
 #' @export
-
-nested_filtering <- function(data, target, filter_name = "auc", cutoff_method = "top_n", cutoff_treshold = 10, n_threads = 1, nfold = 5) {
+nested_filtering <- function(
+    data, target, filter_name = "auc", cutoff_method = "top_n",
+    cutoff_treshold = 10, n_threads = 1, nfold = 5
+) {
   sapply(names(data), function(dataframe) {
     logger::log_info("Ranking {dataframe} data")
     resample <-
@@ -80,10 +78,16 @@ nested_filtering <- function(data, target, filter_name = "auc", cutoff_method = 
 
     names(training_data) <- paste0("split", 1:nfold)
 
-    ranked_features <-
-      rank_features(training_data, target, filter_name = filter_name, n_threads = n_threads)
+    ranked_features <- rank_features(
+      training_data, target, filter_name = filter_name, n_threads = n_threads
+    )
 
-    ranked_features$selected_features <-
-      select_features(data[[dataframe]], ranked_features$ranking, target, cutoff_method = cutoff_method, cutoff_treshold = cutoff_treshold)
-  }, USE.NAMES = TRUE, simplify = F)
+    ranked_features$selected_features <- select_features(
+      data[[dataframe]],
+      ranked_features$ranking,
+      target,
+      cutoff_method = cutoff_method,
+      cutoff_treshold = cutoff_treshold
+    )
+  }, USE.NAMES = TRUE, simplify = FALSE)
 }

@@ -10,20 +10,16 @@
 #' @return An object containing the most important information about defined target
 #'
 #' @examples
-#' my_target <- define_target(phenotype_df = "clinical_data", target_variable = "survived", id_variable = "patient_id", positive_class_indication = "1)
+#' my_target <- define_target(phenotype_df = "clinical_data", target_variable = "survived", id_variable = "patient_id", positive_class_indication = "1")
 #'
-#' @export define_target
-
+#' @export
 define_target <- function(target_variable, positive_class_indication, phenotype_df, id_variable){
-
-  target <- list(
+  list(
     target_variable =  make.names(target_variable), # to be coherent with data prepared for modelling
     positive_class = positive_class_indication,
     phenotype_df = phenotype_df,
     id_variable =  make.names(id_variable) # to be coherent with data prepared for modelling
   )
-
-  return(target)
 }
 
 #' Title
@@ -38,14 +34,12 @@ define_target <- function(target_variable, positive_class_indication, phenotype_
 #' @examples
 #' data_with_target <- add_target(data = my_data, target = my_target)
 #'
-#' @export add_target
-
-prepare_data_for_modelling <- function(data, target){
-
+#' @export
+prepare_data_for_modelling <- function(data, target) {
   target_data <-
     data[[target$phenotype_df]] %>%
-    select(target$id_variable, target$target_variable) %>%
-    mutate(!!rlang::sym(target$target_variable) := as.factor(!!rlang::sym(target$target_variable)))
+    dplyr::select(target$id_variable, target$target_variable) %>%
+    dplyr::mutate(!!rlang::sym(target$target_variable) := as.factor(!!rlang::sym(target$target_variable)))
 
   keep_elements_names <- names(data)
 
@@ -56,35 +50,30 @@ prepare_data_for_modelling <- function(data, target){
         data[[x]]
       } else {
         data[[x]] %>%
-          left_join(target_data, by = target$id_variable) %>%
-          filter(!is.na(!!rlang::sym(target$target_variable)))
+          dplyr::left_join(target_data, by = target$id_variable) %>%
+          dplyr::filter(!is.na(!!rlang::sym(target$target_variable)))
       }
     })
 
   names(data) <- keep_elements_names
 
-  data <-
-    data %>%
-    lapply(function(mydata){
+  lapply(data, function(mydata) {
+    # one-hot encoding for factors and characters
+    if(length(setdiff(names(mydata %>% dplyr::select(which(sapply(.,class)!="numeric"))), c(target$id_variable, target$target_variable))) > 0){
+      mydata <-
+        mydata %>%
+        recipes::recipe( ~ .) %>%
+        recipes::step_dummy(recipes::all_nominal_predictors(), -target$id_variable, -target$target_variable, one_hot = T) %>%
+        recipes::prep() %>%
+        recipes::bake(mydata) %>%
+        dplyr::mutate_if(is.logical, as.integer)
+    } else {
+      mydata
+    }
 
-      # one-hot encoding for factors and characters
-      if(length(setdiff(names(mydata %>% select(which(sapply(.,class)!="numeric"))), c(target$id_variable, target$target_variable))) > 0){
-        mydata <-
-          mydata %>%
-          recipes::recipe( ~ .) %>%
-          recipes::step_dummy(recipes::all_nominal_predictors(), -target$id_variable, -target$target_variable, one_hot = T) %>%
-          recipes::prep() %>%
-          recipes::bake(mydata) %>%
-          mutate_if(is.logical, as.integer)
-      } else {
-        mydata
-      }
+    names(mydata) <- make.names(names(mydata))
 
-      names(mydata) <- make.names(names(mydata))
-
-      mydata %>%
-        filter(!is.na(!!rlang::sym(target$target_variable)))
-    })
-
-
+    mydata %>%
+      dplyr::filter(!is.na(!!rlang::sym(target$target_variable)))
+  })
 }

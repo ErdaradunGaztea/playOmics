@@ -26,3 +26,7 @@ An object containing the most important information about defined target
 \description{
 Define your target
 }
+\examples{
+my_target <- define_target(phenotype_df = "clinical_data", target_variable = "survived", id_variable = "patient_id", positive_class_indication = "1")
+
+}
