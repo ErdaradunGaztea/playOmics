@@ -75,7 +75,7 @@ nested_filtering <- function(
       strata = target$target_variable
     )
     training_data <- lapply(seq_len(nfold), function(i) {
-      rsample::training(rsample::get_rsplit(i))
+      rsample::training(rsample::get_rsplit(resample, i))
     })
 
     names(training_data) <- paste0("split", seq_len(nfold))

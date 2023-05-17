@@ -143,6 +143,7 @@ model_multiple <- function(
         file.path(model_dir, "model.Rds")
       )
 
+      # TODO: check for presence of DALEX & DALEXtra
       if (explain) {
         # Explain prediction only if asked to do so
         explainer_lr <- DALEXtra::explain_tidymodels(
