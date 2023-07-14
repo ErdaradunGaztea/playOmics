@@ -88,7 +88,7 @@ nested_filtering <- function(
       cutoff_method = cutoff_method, cutoff_treshold = cutoff_treshold
     )
 
-    logger::log_info("Selected {n_vars(ret)} features")
+    logger::log_info("Kept {ncol(ret)} features")
 
     ret
   })
