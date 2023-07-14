@@ -1,48 +1,52 @@
-rank_features <- function(data, target, filter_name, n_threads = 1) {
-  ranked_features <- sapply(names(data), function(dataframe) {
-    mydata <- data[[dataframe]] %>% dplyr::select(-target$id_variable)
+rank_features <- function(resample, target, filter_name, n_threads = 1) {
+  t_id <- target[["id_variable"]]
+  t_var <- target[["target_variable"]]
+  t_pos <- target[["positive_class"]]
 
-    task <- mlr3::as_task_classif(mydata, target = target$target_variable, positive = target$positive_class)
-    filter <- mlr3filters::flt(filter_name)
+  filter <- mlr3filters::flt(filter_name)
+  # Set threads for all filters which support it
+  mlr3::set_threads(filter, n_threads)
 
-    # set threads for all filters which support it
-    mlr3::set_threads(filter, n_threads)
-
-    # TODO: why data.table of all things?!
-    ranked_features <- data.table::as.data.table(filter$calculate(task))
-  }, USE.NAMES = TRUE, simplify = F)
-
-  ranked_features <- lapply(1:length(ranked_features), function(i) {
-    iteration_name <- names(ranked_features[i])
-    ranked_features[[i]] %>% tibble::add_column(id = iteration_name)
-  }) %>%
-    dplyr::bind_rows()
-
-  # different selection methods? weighted ranks etc?
-  ranking <- ranked_features %>%
-    dplyr::group_by(!!.[[1]]) %>%
-    dplyr::summarise(
-      mean_score = mean(score, na.rm = T),
-      variance = var(score, na.rm = T)
+  resample %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(
+      task = rsample::training(splits) %>%
+        dplyr::select(-any_of(t_id)) %>%
+        mlr3::as_task_classif(id = id, target = !!t_var, positive = !!t_pos) %>%
+        list(),
+      score = filter$calculate(task) %>%
+        # Unfortunately mlr3filters can only convert to a data.table
+        data.table::as.data.table() %>%
+        list()
     ) %>%
-    dplyr::arrange(dplyr::desc(mean_score))
-
-  list(ranked_features = tidyr::spread(ranked_features, id, score), ranking = ranking)
+    dplyr::pull(score) %>%
+    dplyr::bind_rows() %>%
+    dplyr::group_by(feature) %>%
+    dplyr::summarise(
+      variance = var(score, na.rm = TRUE),
+      score = mean(score, na.rm = TRUE)
+    ) %>%
+    dplyr::arrange(dplyr::desc(score))
 }
 
-# TODO: how does it even work?
 select_features <- function(data, ranking, target, cutoff_method, cutoff_treshold) {
-  selected_features <-
-    if (cutoff_method == "top_n") {
-      na.omit(ranking[1:cutoff_treshold, 1])
-    } else if (cutoff_method == "percentage") {
-      na.omit(ranked_features[1:(nrow(ranked_features) * cutoff_treshold / 100), 1])
-    } else if (cutoff_method == "threshold") {
-      na.omit(ranked_features[ranked_features$score > cutoff_treshold, 1])
-    }
+  vars <- switch(
+    cutoff_method,
+    top_n = ranking %>%
+      dplyr::slice_max(order_by = score, n = cutoff_treshold, with_ties = FALSE, na_rm = TRUE),
+    percentage = ranking %>%
+      dplyr::slice_max(order_by = score, prop = cutoff_treshold / 100, with_ties = FALSE, na_rm = TRUE),
+    threshold = ranking %>%
+      dplyr::filter(score > cutoff_treshold),
+    stop(sprintf("Cutoff method '%s' not available.", cutoff_method))
+  )
 
-  # TODO: seems like this dplyr::pull() retrieves a character vector, am I right?
-  data[, c(target$id_variable, target$target_variable, dplyr::pull(selected_features))]
+  data %>%
+    dplyr::select(
+      !!target$id_variable,
+      dplyr::all_of(dplyr::pull(vars, feature)),
+      !!target$target_variable
+    )
 }
 
 #' Univariate feature selection
@@ -66,30 +70,26 @@ nested_filtering <- function(
     data, target, filter_name = "auc", cutoff_method = "top_n",
     cutoff_treshold = 10, n_threads = 1, nfold = 5
 ) {
-  sapply(names(data), function(dataframe) {
-    logger::log_info("Ranking {dataframe} data")
+  purrr::imap(data, function(frame, label) {
+    logger::log_info("Ranking {label} data")
 
     resample <- rsample::vfold_cv(
-      data[[dataframe]],
-      v = nfold,
+      frame,
+      v = min(nfold, nrow(frame)),
       strata = target$target_variable
     )
-    training_data <- lapply(seq_len(nfold), function(i) {
-      rsample::training(rsample::get_rsplit(resample, i))
-    })
 
-    names(training_data) <- paste0("split", seq_len(nfold))
-
-    ranked_features <- rank_features(
-      training_data, target, filter_name = filter_name, n_threads = n_threads
+    ranking <- rank_features(
+      resample, target, filter_name = filter_name, n_threads = n_threads
     )
 
-    ranked_features$selected_features <- select_features(
-      data[[dataframe]],
-      ranked_features$ranking,
-      target,
-      cutoff_method = cutoff_method,
-      cutoff_treshold = cutoff_treshold
+    ret <- select_features(
+      frame, ranking, target,
+      cutoff_method = cutoff_method, cutoff_treshold = cutoff_treshold
     )
-  }, USE.NAMES = TRUE, simplify = FALSE)
+
+    logger::log_info("Selected {n_vars(ret)} features")
+
+    ret
+  })
 }
